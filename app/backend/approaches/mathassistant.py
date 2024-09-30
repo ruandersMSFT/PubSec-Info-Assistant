@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from langchain_openai import AzureChatOpenAI
 from langchain.agents import initialize_agent, load_tools, AgentType
 from langchain.prompts import ChatPromptTemplate
+from langchain_community.agent_toolkits.load_tools import initialize_agent, load_tools, AgentType
 from azure.identity import ManagedIdentityCredential, AzureAuthorityHosts, DefaultAzureCredential, get_bearer_token_provider
 
 warnings.filterwarnings('ignore')
@@ -51,8 +52,8 @@ desc = (
 )
 
 class PythagorasTool(BaseTool):
-    name = "Hypotenuse calculator"
-    description = desc
+    name: ClassVar[str] = "Hypotenuse calculator"
+    description: ClassVar[str] = desc
     
     def _run(
         self,
@@ -83,8 +84,8 @@ from math import pi
   
 
 class CircumferenceTool(BaseTool):
-    name = "Circumference calculator"
-    description = "use this tool when you need to calculate a circumference using the radius of a circle"
+    name: ClassVar[str] = "Circumference calculator"
+    description: ClassVar[str] = "use this tool when you need to calculate a circumference using the radius of a circle"
 
     def _run(self, radius: Union[int, float]):
         return float(radius)*2.0*pi
