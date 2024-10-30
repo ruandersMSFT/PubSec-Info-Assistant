@@ -6,10 +6,12 @@
 import os
 import warnings
 from dotenv import load_dotenv
+from typing import ClassVar
+
 from langchain_openai import AzureChatOpenAI
-from langchain.agents import initialize_agent, load_tools, AgentType
+from langchain.agents import initialize_agent, AgentType
 from langchain.prompts import ChatPromptTemplate
-from langchain_community.agent_toolkits.load_tools import initialize_agent, load_tools, AgentType
+from langchain_community.agent_toolkits.load_tools import load_tools
 from azure.identity import ManagedIdentityCredential, AzureAuthorityHosts, DefaultAzureCredential, get_bearer_token_provider
 
 warnings.filterwarnings('ignore')
