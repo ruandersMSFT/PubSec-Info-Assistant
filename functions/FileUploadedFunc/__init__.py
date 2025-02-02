@@ -14,6 +14,7 @@ from azure.identity import ManagedIdentityCredential, AzureAuthorityHosts, Defau
 from azure.search.documents import SearchClient
 from shared_code.utilities_helper import UtilitiesHelper
 from urllib.parse import unquote
+from azure.monitor.opentelemetry import configure_azure_monitor
 
 
 cosmosdb_url = os.environ["COSMOSDB_URL"]
@@ -83,7 +84,6 @@ def main(myblob: func.InputStream):
     """ Function to read supported file types and pass to the correct queue for processing"""
 
     try:
-        time.sleep(random.randint(1, 2))  # add a random delay
         statusLog.upsert_document(myblob.name, 'Pipeline triggered by Blob Upload', StatusClassification.INFO, State.PROCESSING, False)            
         statusLog.upsert_document(myblob.name, f'{function_name} - FileUploadedFunc function started', StatusClassification.DEBUG)    
         
