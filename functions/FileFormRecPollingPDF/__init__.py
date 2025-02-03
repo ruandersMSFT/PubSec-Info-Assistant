@@ -161,10 +161,12 @@ def main(msg: func.QueueMessage) -> None:
                     statusLog.upsert_document(blob_name, f'{function_name} - maximum submissions to FR reached', StatusClassification.ERROR, State.ERROR)     
                 
         else:
+            logging.error(f"{function_name} - Error raised by FR polling - blob_name: {blob_name}")
             statusLog.upsert_document(blob_name, f'{function_name} - Error raised by FR polling', StatusClassification.ERROR, State.ERROR)    
                             
     except Exception as e:
         # a general error 
+        logging.error(f"{function_name} - An error occurred - blob_name: {blob_name} code: {response.status_code} - {str(e)}")
         statusLog.upsert_document(blob_name, f"{function_name} - An error occurred - code: {response.status_code} - {str(e)}", StatusClassification.ERROR, State.ERROR)
         
     statusLog.save_document(blob_name)
