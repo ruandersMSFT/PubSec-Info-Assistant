@@ -26,7 +26,7 @@ azure_blob_drop_storage_container = os.environ["BLOB_STORAGE_ACCOUNT_UPLOAD_CONT
 azure_blob_content_storage_container = os.environ["BLOB_STORAGE_ACCOUNT_OUTPUT_CONTAINER_NAME"]
 azure_blob_log_storage_container = os.environ["BLOB_STORAGE_ACCOUNT_LOG_CONTAINER_NAME"]
 CHUNK_TARGET_SIZE = int(os.environ["CHUNK_TARGET_SIZE"])
-FR_API_VERSION = os.environ["FR_API_VERSION"]
+DOCUMENT_INTELLIGENCE_API_VERSION = os.environ["DOCUMENT_INTELLIGENCE_API_VERSION"]
 # ALL or Custom page numbers for multi-page documents(PDF/TIFF). Input the page numbers and/or
 # ranges of pages you want to get in the result. For a range of pages, use a hyphen, like pages="1-3, 5-6".
 # Separate each page number or range with a comma.
@@ -37,8 +37,8 @@ non_pdf_submit_queue = os.environ["NON_PDF_SUBMIT_QUEUE"]
 pdf_polling_queue = os.environ["PDF_POLLING_QUEUE"]
 pdf_submit_queue = os.environ["PDF_SUBMIT_QUEUE"]
 text_enrichment_queue = os.environ["TEXT_ENRICHMENT_QUEUE"]
-endpoint = os.environ["AZURE_FORM_RECOGNIZER_ENDPOINT"]
-api_version = os.environ["FR_API_VERSION"]
+endpoint = os.environ["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"]
+api_version = os.environ["DOCUMENT_INTELLIGENCE_API_VERSION"]
 max_submit_requeue_count = int(os.environ["MAX_SUBMIT_REQUEUE_COUNT"])
 max_polling_requeue_count = int(os.environ["MAX_POLLING_REQUEUE_COUNT"])
 submit_requeue_hide_seconds = int(os.environ["SUBMIT_REQUEUE_HIDE_SECONDS"])
@@ -49,8 +49,8 @@ local_debug = os.environ["LOCAL_DEBUG"]
 azure_ai_credential_domain = os.environ["AZURE_AI_CREDENTIAL_DOMAIN"]
 azure_openai_authority_host = os.environ["AZURE_OPENAI_AUTHORITY_HOST"]
 
-function_name = "FileFormRecPollingPDF"
-FR_MODEL = "prebuilt-layout"
+function_name = "FileDocIntelPollingPDF"
+document_intelligence_model = "prebuilt-layout"
 
 if azure_openai_authority_host == "AzureUSGovernment":
     AUTHORITY = AzureAuthorityHosts.AZURE_GOVERNMENT
@@ -79,13 +79,13 @@ def main(msg: func.QueueMessage) -> None:
         message_json = json.loads(message_body)
         blob_name =  message_json['blob_name']
         blob_uri =  message_json['blob_uri']
-        FR_resultId = message_json['FR_resultId']
+        resultId = message_json['resultId']
         queued_count = message_json['polling_queue_count']      
         submit_queued_count = message_json["submit_queued_count"]
         statusLog.upsert_document(blob_name, f'{function_name} - Message received from pdf polling queue attempt {queued_count}', StatusClassification.DEBUG, State.PROCESSING)        
-        statusLog.upsert_document(blob_name, f'{function_name} - Polling Form Recognizer function started', StatusClassification.INFO)
+        statusLog.upsert_document(blob_name, f'{function_name} - Polling Document Intelligence function started', StatusClassification.INFO)
         
-        # Construct and submmit the polling message to FR
+        # Construct and submmit the polling message to Document Intelligence
         headers = {
             "Content-Type": "application/json",
             'Authorization': f'Bearer {token_provider()}'
@@ -94,7 +94,7 @@ def main(msg: func.QueueMessage) -> None:
         params = {
             'api-version': api_version
         }
-        url = f"{endpoint}formrecognizer/documentModels/{FR_MODEL}/analyzeResults/{FR_resultId}"
+        url = f"{endpoint}documentintelligence/documentModels/{document_intelligence_model}/analyzeResults/{resultId}"
         
         # retry logic to handle 'Connection broken: IncompleteRead' errors, up to n times
      
@@ -102,13 +102,13 @@ def main(msg: func.QueueMessage) -> None:
         
         # Check response and process
         if response.status_code == 200:
-            # FR processing is complete OR still running- create document map 
+            # Document Intelligence processing is complete OR still running- create document map 
             response_json = response.json()
             response_status = response_json['status']
             
             if response_status == "succeeded":
                 # successful, so continue to document map and chunking
-                statusLog.upsert_document(blob_name, f'{function_name} - Form Recognizer has completed processing and the analyze results have been received', StatusClassification.DEBUG)  
+                statusLog.upsert_document(blob_name, f'{function_name} - Document Intelligence has completed processing and the analyze results have been received', StatusClassification.DEBUG)  
                 # build the document map     
                 statusLog.upsert_document(blob_name, f'{function_name} - Starting document map build', StatusClassification.DEBUG)  
                 document_map = utilities.build_document_map_pdf(blob_name, blob_uri, response_json["analyzeResult"], azure_blob_log_storage_container, enableDevCode)  
@@ -135,7 +135,7 @@ def main(msg: func.QueueMessage) -> None:
                     backoff += random.randint(0, 10)
                     queued_count += 1
                     message_json['polling_queue_count'] = queued_count
-                    statusLog.upsert_document(blob_name, f"{function_name} - FR has not completed processing, requeuing. Polling back off of attempt {queued_count} of {max_polling_requeue_count} for {backoff} seconds", StatusClassification.DEBUG, State.QUEUED) 
+                    statusLog.upsert_document(blob_name, f"{function_name} - Document Intelligence has not completed processing, requeuing. Polling back off of attempt {queued_count} of {max_polling_requeue_count} for {backoff} seconds", StatusClassification.DEBUG, State.QUEUED) 
                     queue_client = QueueClient(account_url=azure_queue_storage_endpoint,
                                queue_name=pdf_polling_queue,
                                credential=azure_credential,
@@ -143,11 +143,11 @@ def main(msg: func.QueueMessage) -> None:
                     message_json_str = json.dumps(message_json)  
                     queue_client.send_message(message_json_str, visibility_timeout=backoff)
                 else:
-                    statusLog.upsert_document(blob_name, f'{function_name} - maximum submissions to FR reached', StatusClassification.ERROR, State.ERROR)     
+                    statusLog.upsert_document(blob_name, f'{function_name} - maximum submissions to Document Intelligence reached', StatusClassification.ERROR, State.ERROR)     
             else:
-                # unexpected status returned by FR, such as internal capacity overload, so requeue
+                # unexpected status returned by Document Intelligence, such as internal capacity overload, so requeue
                 if submit_queued_count < max_submit_requeue_count:
-                    statusLog.upsert_document(blob_name, f'{function_name} - unhandled response from Form Recognizer- code: {response.status_code} status: {response_status} - text: {response.text}. Document will be resubmitted', StatusClassification.ERROR)                  
+                    statusLog.upsert_document(blob_name, f'{function_name} - unhandled response from Document Intelligence - code: {response.status_code} status: {response_status} - text: {response.text}. Document will be resubmitted', StatusClassification.ERROR)                  
                     queue_client = QueueClient(account_url=azure_queue_storage_endpoint,
                                queue_name=pdf_submit_queue,
                                credential=azure_credential,
@@ -158,11 +158,11 @@ def main(msg: func.QueueMessage) -> None:
                     queue_client.send_message(message_string, visibility_timeout = submit_requeue_hide_seconds)  
                     statusLog.upsert_document(blob_name, f'{function_name} file resent to submit queue. Visible in {submit_requeue_hide_seconds} seconds', StatusClassification.DEBUG, State.THROTTLED)      
                 else:
-                    statusLog.upsert_document(blob_name, f'{function_name} - maximum submissions to FR reached', StatusClassification.ERROR, State.ERROR)     
+                    statusLog.upsert_document(blob_name, f'{function_name} - maximum submissions to Document Intelligence reached', StatusClassification.ERROR, State.ERROR)     
                 
         else:
-            logging.error(f"{function_name} - Error raised by FR polling - blob_name: {blob_name}")
-            statusLog.upsert_document(blob_name, f'{function_name} - Error raised by FR polling', StatusClassification.ERROR, State.ERROR)    
+            logging.error(f"{function_name} - Error raised by Document Intelligence polling - blob_name: {blob_name}")
+            statusLog.upsert_document(blob_name, f'{function_name} - Error raised by Document Intelligence polling', StatusClassification.ERROR, State.ERROR)    
                             
     except Exception as e:
         # a general error 

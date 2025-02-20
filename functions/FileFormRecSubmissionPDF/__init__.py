@@ -26,8 +26,8 @@ cosmosdb_log_database_name = os.environ["COSMOSDB_LOG_DATABASE_NAME"]
 cosmosdb_log_container_name = os.environ["COSMOSDB_LOG_CONTAINER_NAME"]
 pdf_polling_queue = os.environ["PDF_POLLING_QUEUE"]
 pdf_submit_queue = os.environ["PDF_SUBMIT_QUEUE"]
-endpoint = os.environ["AZURE_FORM_RECOGNIZER_ENDPOINT"]
-api_version = os.environ["FR_API_VERSION"]
+endpoint = os.environ["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"]
+api_version = os.environ["DOCUMENT_INTELLIGENCE_API_VERSION"]
 max_submit_requeue_count = int(os.environ["MAX_SUBMIT_REQUEUE_COUNT"])
 poll_queue_submit_backoff = int(os.environ["POLL_QUEUE_SUBMIT_BACKOFF"])
 pdf_submit_queue_backoff = int(os.environ["PDF_SUBMIT_QUEUE_BACKOFF"])
@@ -36,8 +36,8 @@ azure_ai_credential_domain = os.environ["AZURE_AI_CREDENTIAL_DOMAIN"]
 azure_openai_authority_host = os.environ["AZURE_OPENAI_AUTHORITY_HOST"]
 
 
-FUNCTION_NAME = "FileFormRecSubmissionPDF"
-FR_MODEL = "prebuilt-layout"
+FUNCTION_NAME = "FileDocIntelSubmissionPDF"
+document_intelligence_model = "prebuilt-layout"
 
 if azure_openai_authority_host == "AzureUSGovernment":
     AUTHORITY = AzureAuthorityHosts.AZURE_GOVERNMENT
@@ -65,7 +65,7 @@ utilities = Utilities(
 
 def main(msg: func.QueueMessage) -> None:
     '''This function is triggered by a message in the pdf-submit-queue.
-    It will submit the PDF to Form Recognizer for processing. If the submission
+    It will submit the PDF to Document Intelligence for processing. If the submission
     is throttled, it will requeue the message with a backoff. If the submission
     is successful, it will queue the message to the pdf-polling-queue for polling.'''
     message_body = msg.get_body().decode("utf-8")
@@ -86,7 +86,7 @@ def main(msg: func.QueueMessage) -> None:
         )
         statusLog.upsert_document(
             blob_path,
-            f"{FUNCTION_NAME} - Submitting to Form Recognizer",
+            f"{FUNCTION_NAME} - Submitting to Document Intelligence",
             StatusClassification.INFO,
         )
         
@@ -98,7 +98,7 @@ def main(msg: func.QueueMessage) -> None:
             StatusClassification.DEBUG,
         )
 
-        # Construct and submmit the message to FR
+        # Construct and submmit the message to Document Intelligence
         headers = {
             "Content-Type": "application/json",
             'Authorization': f'Bearer {token_provider()}'
@@ -107,9 +107,9 @@ def main(msg: func.QueueMessage) -> None:
         params = {"api-version": api_version}
 
         body = {"urlSource": blob_path_plus_sas}
-        url = f"{endpoint}formrecognizer/documentModels/{FR_MODEL}:analyze"
+        url = f"{endpoint}documentintelligence/documentModels/{document_intelligence_model}:analyze"
 
-        logging.info(f"Submitting to FR with url: {url}")
+        logging.info(f"Submitting to Document Intelligence with url: {url}")
 
         # Send the HTTP POST request with headers, query parameters, and request body
         response = requests.post(url, headers=headers, params=params, json=body)
@@ -119,11 +119,11 @@ def main(msg: func.QueueMessage) -> None:
             # Successfully submitted so submit to the polling queue
             statusLog.upsert_document(
                 blob_path,
-                f"{FUNCTION_NAME} - PDF submitted to FR successfully",
+                f"{FUNCTION_NAME} - PDF submitted to Document Intelligence successfully",
                 StatusClassification.DEBUG,
             )
             result_id = response.headers.get("apim-request-id")
-            message_json["FR_resultId"] = result_id
+            message_json["resultId"] = result_id
             message_json["polling_queue_count"] = 1
             queue_client = QueueClient(account_url=azure_queue_storage_endpoint,
                                queue_name=pdf_polling_queue,
@@ -135,7 +135,7 @@ def main(msg: func.QueueMessage) -> None:
             )
             statusLog.upsert_document(
                 blob_path,
-                f"{FUNCTION_NAME} - message sent to pdf-polling-queue. Visible in {poll_queue_submit_backoff} seconds. FR Result ID is {result_id}",
+                f"{FUNCTION_NAME} - message sent to pdf-polling-queue. Visible in {poll_queue_submit_backoff} seconds. Document Intelligence Result ID is {result_id}",
                 StatusClassification.DEBUG,
                 State.QUEUED,
             )
@@ -152,7 +152,7 @@ def main(msg: func.QueueMessage) -> None:
                 message_json["queued_count"] = queued_count
                 statusLog.upsert_document(
                     blob_path,
-                    f"{FUNCTION_NAME} - Throttled on PDF submission to FR, requeuing. Back off of {backoff} seconds",
+                    f"{FUNCTION_NAME} - Throttled on PDF submission to Document Intelligence, requeuing. Back off of {backoff} seconds",
                     StatusClassification.DEBUG,
                 )
                 queue_client = QueueClient(account_url=azure_queue_storage_endpoint,
@@ -170,7 +170,7 @@ def main(msg: func.QueueMessage) -> None:
             else:
                 statusLog.upsert_document(
                     blob_path,
-                    f"{FUNCTION_NAME} - maximum submissions to FR reached",
+                    f"{FUNCTION_NAME} - maximum submissions to Document Intelligence reached",
                     StatusClassification.ERROR,
                     State.ERROR,
                 )
@@ -179,7 +179,7 @@ def main(msg: func.QueueMessage) -> None:
             # general error occurred
             statusLog.upsert_document(
                 blob_path,
-                f"{FUNCTION_NAME} - Error on PDF submission to FR - {response.status_code} - {response.reason}",
+                f"{FUNCTION_NAME} - Error on PDF submission to Document Intelligence - {response.status_code} - {response.reason}",
                 StatusClassification.ERROR,
                 State.ERROR,
             )
